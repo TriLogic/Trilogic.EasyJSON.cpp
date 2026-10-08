@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+runtime="${CONTAINER_RUNTIME:-}"
+if [[ -z "$runtime" ]]; then
+    if command -v docker >/dev/null 2>&1; then runtime=docker
+    elif command -v podman >/dev/null 2>&1; then runtime=podman
+    else
+        echo 'Docker or Podman is required; no host packages were changed.' >&2
+        exit 1
+    fi
+fi
+
+image="easyjson-dev:local"
+if [[ "${1:-}" == build-image ]]; then
+    exec "$runtime" build -t "$image" .
+fi
+
+args=(run --rm -i)
+if [[ -t 0 && -t 1 ]]; then args+=(-t); fi
+if [[ "$runtime" == podman ]]; then args+=(--userns=keep-id); fi
+args+=(--user "$(id -u):$(id -g)" -e HOME=/tmp
+    --mount "type=bind,source=$PWD,target=/workspace" -w /workspace)
+if [[ $# -eq 0 ]]; then set -- bash; fi
+exec "$runtime" "${args[@]}" "$image" "$@"

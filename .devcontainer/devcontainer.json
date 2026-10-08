@@ -1,0 +1,14 @@
+{
+  "name": "Trilogic.EasyJSON.cpp",
+  "build": { "dockerfile": "../Dockerfile", "context": ".." },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools", "ms-vscode.cmake-tools"],
+      "settings": {
+        "C_Cpp.default.compileCommands": "/workspace/build/dev/compile_commands.json"
+      }
+    }
+  }
+}
