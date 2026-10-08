@@ -79,9 +79,12 @@ integer retrieval. Out-of-range integer conversions throw `JSException` rather
 than relying on C# unchecked casts. An array has numeric content only when nonempty
 and every child has numeric content. Cast helpers remain excluded by design.
 
-The parser and string escaping use a vendored, pinned nlohmann/json 3.12.0 header.
-This dependency is private to the implementation and requires no download at build
-time. See `third_party/nlohmann/LICENSE.MIT` and `THIRD_PARTY_NOTICES.md`.
+The parser, tokenizer, and string escaping are native C++ ports of the C#
+`JSReader`, `JSTokenizer`, and `JSTools` routines. There are no third-party
+library dependencies. Parsing supports comments and trailing commas, validates
+JSON numbers and UTF-8, decodes Unicode surrogate pairs, and rejects duplicate
+keys, trailing input, and nesting beyond 256 levels. Formatting escapes Unicode
+as UTF-16 `\uXXXX` sequences, following the C# formatter.
 
 Development uses GCC 16.2 and its bundled libstdc++ inside a Debian container.
 C++26 mode is the default, with GNU extensions disabled. C++26 support is

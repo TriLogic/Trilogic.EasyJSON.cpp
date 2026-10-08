@@ -6,7 +6,7 @@ Reference commit: 44ec998f94746208551c8c82aeaf07b08003b9f7
 Copyright 2012 Trilogic Industries, LLC.
 The upstream MIT license is retained in `LICENSE.Trilogic.EasyJSON.txt`.
 
-JSON parsing and string escaping use nlohmann/json v3.12.0.
-Source: https://github.com/nlohmann/json/tree/v3.12.0
-The unmodified single header is in `third_party/nlohmann/json.hpp`.
-Its MIT license is in `third_party/nlohmann/LICENSE.MIT`.
+The native C++ reader, tokenizer, and escaping routines are ported from the
+upstream JSReader.cs, JSTokenizer.cs, and JSTools.cs at commit
+b00c77e6cdca404ba3e56c376dbf6b6db62cf9a6. No external JSON library
+is bundled or required.

@@ -1,80 +1,68 @@
 #include <easyjson/easyjson.hpp>
-#include <nlohmann/json.hpp>
+#include "jstokenizer.hpp"
 
 #include <istream>
 #include <iterator>
-#include <map>
-#include <set>
 
 namespace easyjson {
 namespace {
-using Json = nlohmann::ordered_json;
+using detail::TokenType;
 
-// Normalize only upstream's comment/trailing-comma extensions. The JSON
-// dependency handles all grammar, escapes, Unicode, and numeric validation.
-std::string normalize(std::string_view input) {
-    std::string text;
-    bool quoted = false;
-    bool escaped = false;
-    for (std::size_t i = 0; i < input.size(); ++i) {
-        const char c = input[i];
-        if (!quoted && c == '/' && i + 1 < input.size()) {
-            if (input[i + 1] == '/') {
-                text += ' ';
-                i += 2;
-                while (i < input.size() && input[i] != '\n' && input[i] != '\r') ++i;
-                if (i < input.size()) text += input[i];
-                continue;
-            }
-            if (input[i + 1] == '*') {
-                text += ' ';
-                i += 2;
-                while (i + 1 < input.size() && !(input[i] == '*' && input[i + 1] == '/')) {
-                    text += input[i] == '\n' ? '\n' : ' ';
-                    ++i;
-                }
-                if (i + 1 >= input.size()) throw JSException("Unterminated JSON comment");
-                ++i;
-                continue;
-            }
-        }
-        text += c;
-        if (quoted && escaped) escaped = false;
-        else if (quoted && c == '\\') escaped = true;
-        else if (c == '"') quoted = !quoted;
-    }
-    quoted = false;
-    escaped = false;
-    for (std::size_t i = 0; i < text.size(); ++i) {
-        const char c = text[i];
-        if (!quoted && c == ',') {
-            const auto next = text.find_first_not_of(" \t\r\n", i + 1);
-            const auto previous = text.find_last_not_of(" \t\r\n", i == 0 ? 0 : i - 1);
-            if (i > 0 && previous != std::string::npos &&
-                std::string_view("[{,:").find(text[previous]) == std::string_view::npos &&
-                next != std::string::npos && (text[next] == ']' || text[next] == '}')) text[i] = ' ';
-        }
-        if (quoted && escaped) escaped = false;
-        else if (quoted && c == '\\') escaped = true;
-        else if (c == '"') quoted = !quoted;
-    }
-    return text;
-}
-
-std::shared_ptr<JSItem> convert(const Json& value) {
-    if (value.is_null()) return std::make_shared<Null>();
-    if (value.is_boolean()) return std::make_shared<Bool>(value.get<bool>());
-    if (value.is_number()) return std::make_shared<Number>(value.get<double>());
-    if (value.is_string()) return std::make_shared<String>(value.get<std::string>());
-    if (value.is_array()) {
-        auto result = JSItem::create_array();
-        for (const auto& child : value) result->add(convert(child));
+// Port of JSReader: consume tokenizer values directly into the EasyJSON tree.
+class JSReader {
+public:
+    explicit JSReader(std::string_view input) : tokens_(input) { tokens_.next(); }
+    std::shared_ptr<JSItem> parse() {
+        if (tokens_.type != TokenType::ArrayLeft && tokens_.type != TokenType::ObjectLeft)
+            throw JSException("Expected Array or Object");
+        auto result = value(0);
+        if (tokens_.type != TokenType::End) throw JSException("Unexpected trailing JSON input");
         return result;
     }
-    auto result = JSItem::create_object();
-    for (auto it = value.begin(); it != value.end(); ++it) result->add(it.key(), convert(it.value()));
-    return result;
-}
+private:
+    detail::JSTokenizer tokens_;
+    std::shared_ptr<JSItem> value(std::size_t depth) {
+        if (depth > 256) throw JSException("JSON nesting limit exceeded (256)");
+        std::shared_ptr<JSItem> result;
+        switch (tokens_.type) {
+        case TokenType::ArrayLeft: return container(false, depth);
+        case TokenType::ObjectLeft: return container(true, depth);
+        case TokenType::Null: result = std::make_shared<Null>(); break;
+        case TokenType::Boolean: result = std::make_shared<Bool>(tokens_.boolean); break;
+        case TokenType::Number: result = std::make_shared<Number>(tokens_.number); break;
+        case TokenType::String: result = std::make_shared<String>(tokens_.text); break;
+        default: throw JSException("Expected JSON value");
+        }
+        tokens_.next();
+        return result;
+    }
+    std::shared_ptr<JSItem> container(bool object, std::size_t depth) {
+        auto result = object ? JSItem::create_object() : JSItem::create_array();
+        const auto close = object ? TokenType::ObjectRight : TokenType::ArrayRight;
+        const auto error = object ? "JSON: Invalid Object Syntax" : "JSON: Invalid Array Syntax";
+        tokens_.next();
+        while (tokens_.type != close) {
+            std::string key;
+            if (object) {
+                if (tokens_.type != TokenType::String) throw JSException(error);
+                key = tokens_.text;
+                if (result->contains(key)) throw JSException("JSON: Duplicate Object Key (" + key + ")");
+                tokens_.next();
+                if (tokens_.type != TokenType::Colon) throw JSException(error);
+                tokens_.next();
+            }
+            auto child = value(depth + 1);
+            if (object) result->add(std::move(key), std::move(child));
+            else result->add(std::move(child));
+            if (tokens_.type == close) break;
+            if (tokens_.type != TokenType::Comma) throw JSException(error);
+            tokens_.next();
+            // The upstream reader permits a trailing comma.
+        }
+        tokens_.next();
+        return result;
+    }
+};
 
 std::string read_stream(std::istream& stream) {
     if (!stream.good()) throw JSException("JSON stream is not readable");
@@ -85,25 +73,7 @@ std::string read_stream(std::istream& stream) {
 }
 
 std::shared_ptr<JSItem> JSItem::parse(std::string_view json) {
-    try {
-        std::map<int, std::set<std::string>> keys;
-        auto callback = [&keys](int depth, Json::parse_event_t event, Json& parsed) {
-            if (depth > 256) throw JSException("JSON nesting limit exceeded (256)");
-            if (event == Json::parse_event_t::object_start) keys[depth].clear();
-            if (event == Json::parse_event_t::key) {
-                if (!keys[depth - 1].insert(parsed.get<std::string>()).second) {
-                    throw JSException("JSON: Duplicate Object Key");
-                }
-            }
-            if (event == Json::parse_event_t::object_end) keys.erase(depth);
-            return true;
-        };
-        const auto value = Json::parse(normalize(json), callback);
-        if (!value.is_array() && !value.is_object()) throw JSException("Expected Array or Object");
-        return convert(value);
-    } catch (const Json::exception& error) {
-        throw JSException(error.what());
-    }
+    return JSReader(json).parse();
 }
 std::shared_ptr<JSItem> JSItem::parse(std::istream& stream) { return parse(read_stream(stream)); }
 std::shared_ptr<Array> JSItem::parse_array(std::string_view json) {

@@ -26,7 +26,6 @@ target_compile_features(easyjson PUBLIC cxx_std_${EASYJSON_CXX_STANDARD})
 target_include_directories(easyjson PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_include_directories(easyjson SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(easyjson PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -42,6 +41,9 @@ if(BUILD_TESTING)
     add_executable(easyjson_interface tests/interface.cpp)
     target_link_libraries(easyjson_interface PRIVATE EasyJSON::easyjson)
     add_test(NAME interface COMMAND easyjson_interface)
+    add_executable(easyjson_parsing tests/parsing.cpp)
+    target_link_libraries(easyjson_parsing PRIVATE EasyJSON::easyjson)
+    add_test(NAME parsing COMMAND easyjson_parsing)
 endif()
 
 include(GNUInstallDirs)
@@ -62,6 +64,3 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/EasyJSONConfig.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/EasyJSON)
 install(FILES LICENSE.Trilogic.EasyJSON.txt THIRD_PARTY_NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/EasyJSON)
-install(FILES third_party/nlohmann/LICENSE.MIT
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/EasyJSON
-    RENAME LICENSE.nlohmann-json.txt)

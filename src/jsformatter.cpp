@@ -1,17 +1,12 @@
 #include <easyjson/jsformatter.hpp>
-#include <nlohmann/json.hpp>
+#include "jsontext.hpp"
 
 #include <cmath>
 #include <fstream>
 #include <sstream>
 
 namespace easyjson {
-namespace {
-std::string quote(std::string_view text) {
-    try { return nlohmann::json(std::string(text)).dump(); }
-    catch (const nlohmann::json::exception& error) { throw JSException(error.what()); }
-}
-}
+using detail::quote;
 
 JSFormatter::JSFormatter(JSOutputFormat format, std::string_view indent_text,
     bool expand_empty, bool blank_before_colon) {
